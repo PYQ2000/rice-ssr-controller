@@ -51,6 +51,8 @@ class OpenCVDualRecorder:
         self._writers: Dict[int, "cv2.VideoWriter"] = {}
         self._output_paths: Dict[int, Path] = {}
         self._record_modes: Dict[int, str] = {}  # 记录每个摄像头的录制模式
+        self._latest_frames: Dict[int, Any] = {}
+        self._latest_frames_lock = threading.Lock()
 
         for idx in cam_indices:
             self._recording_flags[idx] = False
@@ -85,6 +87,10 @@ class OpenCVDualRecorder:
 
     def is_recording(self, cam_idx: int) -> bool:
         return self._recording_flags.get(cam_idx, False)
+
+    def get_latest_frame(self, cam_idx: int):
+        with self._latest_frames_lock:
+            return self._latest_frames.get(cam_idx)
 
     def toggle(self, cam_idx: int, filename_stem: str, record_mode: str = "video") -> Tuple[bool, Optional[Path]]:
         """
@@ -193,6 +199,8 @@ class OpenCVDualRecorder:
         # 清理状态
         for d in (self._writers, self._captures, self._threads, self._stop_events, self._output_paths, self._record_modes):
             d.pop(cam_idx, None)
+        with self._latest_frames_lock:
+            self._latest_frames.pop(cam_idx, None)
 
         return saved_path
 
@@ -233,6 +241,9 @@ class OpenCVDualRecorder:
                 rh = max(0, min(rh, h - y))
                 if rw > 0 and rh > 0:
                     frame = frame[y : y + rh, x : x + rw]
+
+            with self._latest_frames_lock:
+                self._latest_frames[cam_idx] = frame
 
             if record_mode == "frames":
                 # 抽帧模式：每 150 帧保存一张图片
